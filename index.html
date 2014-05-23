@@ -1,0 +1,87 @@
+<!doctype html>
+<head>
+  <title>CodeMirror: JSHint Demo</title>
+  <meta charset='utf-8'/>
+  <link rel="stylesheet" href="codemirror.css">
+  <link rel="stylesheet" href="lint.css">
+  <script src="codemirror.js"></script>
+  <script src="lint.js"></script>
+  <script src="javascript.js"></script>
+  
+  <style type="text/css">
+    .CodeMirror {border: 1px solid black;}
+  </style>
+</head>
+<body>
+
+<article>
+<h2>JSHint Worker Demo</h2>
+<div>
+<textarea id="code-js">var widgets = []
+function updateHints() {
+  editor.operation(function(){
+    for (var i = 0; i < widgets.length; ++i)
+      editor.removeLineWidget(widgets[i]);
+    widgets.length = 0;
+
+    JSHINT(editor.getValue());
+    for (var i = 0; i < JSHINT.errors.length; ++i) {
+      var err = JSHINT.errors[i];
+      if (!err) continue;
+      var msg = document.createElement("div");
+      var icon = msg.appendChild(document.createElement("span"));
+      icon.innerHTML = "!!";
+      icon.className = "lint-error-icon";
+      msg.appendChild(document.createTextNode(err.reason));
+      msg.className = "lint-error";
+      widgets.push(editor.addLineWidget(err.line - 1, msg, {coverGutter: false, noHScroll: true}));
+    }
+  });
+  var info = editor.getScrollInfo();
+  var after = editor.charCoords({line: editor.getCursor().line + 1, ch: 0}, "local").top;
+  if (info.top + info.clientHeight < after)
+    editor.scrollTo(null, after - info.clientHeight + 3);
+}
+</textarea>
+</div>
+
+<script>
+  window.lintCallbacks = {};
+  window.worker = new Worker('worker.js');
+
+  var editor = CodeMirror.fromTextArea(document.getElementById("code-js"), {
+    lineNumbers: true,
+    mode: "javascript",
+    gutters: ["CodeMirror-lint-markers"],
+    pollInterval: 20,
+    lint: {
+      "getAnnotations": validator,
+      "async" : true,
+    }
+  });
+      
+  function validator(cm, updateLinting, options) {
+    var text = cm.getValue() + "\n",
+        id = parseInt(Math.random()*10000000);
+    console.log("validating: " + id);
+    window.lintCallbacks[id] = {};
+    window.lintCallbacks[id].callback = updateLinting;
+    window.lintCallbacks[id].start = Date.now();
+    window.worker.postMessage({ id: id, code: text });
+  }
+  
+  worker.onmessage = function(message) {
+    var callInfo = window.lintCallbacks[message.data.id],
+        _time = (Date.now() - callInfo.start) / 1000;
+    
+    console.log("done validating: " + message.data.id +' in ' + _time + ' sec.');
+    console.log('Result: ');
+    console.log(message.data);
+    callInfo.callback(editor, message.data.errors);
+    delete window.lintCallbacks[message.data.id];
+  };
+</script>
+
+</article>
+</body>
+</html>
